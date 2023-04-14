@@ -45,7 +45,7 @@ regular_season <- matchups %>%
 
 
 e <- elo.run(score(Team.1.Points,Team.2.Points)~Team.1.Manager + Team.2.Manager,#+ regress(Season,1500,0.1,regress.unused = TRUE),
-             k=10,
+             k=15,
              data=regular_season)
 
 
@@ -85,7 +85,19 @@ team_rankings <- bind_rows(team_a,team_b) %>%
   mutate(championship = ifelse(Week==max(Week) & Rank==1 & Season != 6,elo,NA_real_)) %>% 
   group_by(team) %>% 
   mutate(peak_elo = ifelse(elo==max(elo),elo,NA_real_))
-  
+
+
+season_matchweeks <- matchups %>% 
+  bind_rows(.id="Season") %>% 
+  group_by(Season,Week) %>% 
+  tally(name = "N Matchups") %>% 
+  ungroup() %>% 
+  mutate(rolling_match_week = row_number()) %>% 
+  select(-`N Matchups`)
+
+team_rankings <- team_rankings %>% 
+  left_join(season_matchweeks)
+
 overall <- team_rankings %>% 
   group_by(team) %>% 
   filter(match_week==max(match_week)) %>% 
@@ -184,6 +196,8 @@ ui <- fluidPage(
               multiple = TRUE
   ),
   
+
+  
   mainPanel(
     
     tabsetPanel(type = "tabs",
@@ -194,7 +208,12 @@ ui <- fluidPage(
     )
     
     
-  )
+  ),
+  sliderInput("xrange", "Zoom in to matchweeks:", min = 1, 
+              max = max(team_rankings$rolling_match_week), 
+              value = c(1, max(team_rankings$rolling_match_week)), 
+              step = 1,
+              width = "100%")
   
 )
 
@@ -244,42 +263,59 @@ server <- function(input, output, session) {
     
     cols <- d$team %>% unique() %>% length()
     
-    current_season <- max(d$Season)
-    
     season_week_max <- d %>% group_by(year,Season) %>% 
-      summarise(max_gameweek = max(Week))
+      summarise(max_match_week = max(rolling_match_week))
     
     current_season <- max(season_week_max$Season)
     current_year <- season_week_max %>% filter(Season==current_season) %>% pull(year)
-    max_week_current_season <- season_week_max %>% filter(Season==current_season) %>% pull(max_gameweek)
+    max_week_current_season <- season_week_max %>% filter(Season==current_season) %>% pull(max_match_week)
     
+    end_of_season <- d %>% group_by(year) %>% 
+      summarise(start_of_year  = ifelse(min(rolling_match_week)==1,0,min(rolling_match_week)),
+        end_of_year = max(rolling_match_week)) %>% 
+      mutate(
+        midpoint = round((start_of_year+end_of_year)/2),
+        label_placement = start_of_year,
+        
+             y = max(d$elo)+10) %>% 
+      ungroup()
     
-    d <- d %>% ungroup() %>% add_row(year = current_year,Season = current_season, Week = c(max_week_current_season + seq(1:10) ))
+  
+   breaks_x <-  c(end_of_season$start_of_year,end_of_season$midpoint) %>% sort()
+    
+    # 
+    # d <- d %>% ungroup() %>% add_row(year = current_year,Season = current_season, 
+    #                                  rolling_match_week = c(max_week_current_season + seq(1:10))
+    #                                  
+    #                                  )
+
     tail(d)
   
     d  %>%
       group_by(team) %>% 
       mutate(max_season = max(Season)) %>% 
       ungroup() %>% 
-      ggplot(aes(x=Week %>% as.factor(),y=elo,colour=team,group = team,label=label))+
+      ggplot(aes(x=rolling_match_week ,y=elo)) +
+      geom_text(data = end_of_season, aes(x = label_placement, y = y, label = year,fontface="bold"), color = "grey50", hjust=-0.1) +
       geom_hline(yintercept = 1500,linetype="dashed")+
-      geom_line(linewidth=1,linetype="solid",aes( alpha = max_season != current_season))+
+      geom_vline(xintercept = end_of_season %>% pull(start_of_year),colour="grey50") +
+      geom_line(linewidth=1,linetype="solid",aes( alpha = max_season != current_season,colour=team,path=year)) +
       scale_color_manual(guide = "none",values = met.brewer(name="Juarez",n=cols,type="continuous")) +
-      scale_x_discrete(breaks = c(5,10,15,20,25),
-                       expand = c(0.0, 0.85))+
-      ggrepel::geom_label_repel(aes(alpha = max_season != current_season),show.legend = FALSE,nudge_x = 3,segment.size=0.25,segment.color = "grey")+
+      scale_x_continuous(breaks = breaks_x)+
+      ggrepel::geom_label_repel(aes(alpha = max_season != current_season,colour=team,label=label),show.legend = FALSE,nudge_x = 3,segment.size=0.25,segment.color = "grey") +
       # ggthemes::theme_tufte()+
-      cowplot::theme_half_open()+
-      labs(y="ELO",x="Week") +
-      facet_grid(.~year,scales = "free_x",space = "free_x") + 
-      theme(panel.spacing = unit(0.5, "mm"))+
-      geom_point(aes(y=peak_elo,alpha = max_season != current_season),size=3,shape=15)+
+      cowplot::theme_minimal_vgrid() +
+      labs(y="ELO",x="Matchweek") +
+      # facet_grid(.~year,scales = "free_x",space = "free_x") + 
+      # theme(panel.spacing = unit(0.5, "mm"))+
+      geom_point(aes(y=peak_elo,alpha = max_season != current_season,colour=team),size=3,shape=15)+
       scale_alpha_manual(guide = "none",values = c(1,0.3)) +
       # geom_point(aes(y=championship),size=6,shape=21,fill="gold")+
-      geom_text(aes(y = championship),label="★", size=7,family = "HiraKakuPro-W3")+
-    
+      geom_text(aes(y = championship,colour=team),label="★", size=7,family = "HiraKakuPro-W3")+
+
       theme(axis.text.x = element_text(angle = 45,hjust =1),
-            )
+            )    +
+      coord_cartesian(xlim = input$xrange)
 
       
     # annotate("text", x = 11, y = ann_y, size=5,label = "2014/15")+
