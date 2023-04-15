@@ -78,7 +78,8 @@ team_rankings <- bind_rows(team_a,team_b) %>%
                           Season==5~"2018/19",
                           Season==6~"2019/20",
                           Season==7~"2020/21",
-                          Season==8~"2021/22")
+                          Season==8~"2021/22",
+                          Season==9~"2022/23")
   ) %>%
   mutate(label = (ifelse(match_week == max(match_week),team %>% as.character(),NA_character_))) %>% 
   group_by(Season,team) %>% 
