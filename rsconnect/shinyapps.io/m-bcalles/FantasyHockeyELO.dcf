@@ -5,9 +5,7 @@ account: m-bcalles
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 6068642
-bundleId: 7092103
+bundleId: 7653587
 url: https://m-bcalles.shinyapps.io/fantasyhockeyelo/
-when: 1681528785.70996
-lastSyncTime: 1681528785.70997
 asMultiple: FALSE
 asStatic: FALSE
